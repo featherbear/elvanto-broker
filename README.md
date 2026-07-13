@@ -10,7 +10,8 @@ It has two jobs:
 ## Endpoints
 
 - `GET /health`: health check
-- `GET /oidc/.well-known/oauth-authorization-server`: broker OAuth metadata
+- `GET /.well-known/oauth-authorization-server`: OAuth authorization server metadata
+- `GET /.well-known/openid-configuration`: OIDC discovery metadata
 - `GET /oidc/auth`: redirects users to Elvanto OAuth
 - `POST /oidc/token`: exchanges Elvanto authorization codes or broker refresh tokens
 - `GET /oidc/userinfo`: returns OIDC-style userinfo from Elvanto

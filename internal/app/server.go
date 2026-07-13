@@ -77,10 +77,9 @@ func (s *Server) Run() error {
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /oidc/.well-known/oauth-authorization-server", s.discovery)
-	mux.HandleFunc("GET /oidc/auth", s.auth)
-	mux.HandleFunc("POST /oidc/token", s.token)
-	mux.HandleFunc("GET /oidc/userinfo", s.userinfo)
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.discovery)
+	mux.HandleFunc("GET /.well-known/openid-configuration", s.discovery)
+	mux.Handle("/oidc/", http.StripPrefix("/oidc", s.oidcRoutes()))
 	mux.HandleFunc("GET /token/issue", s.issueToken)
 	mux.HandleFunc("POST /token/issue", s.issueToken)
 	mux.HandleFunc("POST /token/exchange", s.exchangeToken)

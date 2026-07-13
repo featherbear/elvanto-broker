@@ -12,6 +12,14 @@ import (
 	"elvanto-broker/internal/vault"
 )
 
+func (s *Server) oidcRoutes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /auth", s.auth)
+	mux.HandleFunc("POST /token", s.token)
+	mux.HandleFunc("GET /userinfo", s.userinfo)
+	return mux
+}
+
 func (s *Server) discovery(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"issuer":                                s.config.Issuer,
