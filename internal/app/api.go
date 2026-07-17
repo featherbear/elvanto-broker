@@ -114,7 +114,11 @@ func (s *Server) issueToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, ok := s.vault.BySubject(sub)
+	entry, ok, err := s.vault.Get(sub)
+	if err != nil {
+		httpx.WriteOAuthError(w, http.StatusInternalServerError, "server_error", "failed to read token vault")
+		return
+	}
 	if !ok {
 		httpx.WriteOAuthError(w, http.StatusUnauthorized, "invalid_token", "no cached token for caller")
 		return
@@ -175,7 +179,11 @@ func (s *Server) vaultEntryForBrokerToken(w http.ResponseWriter, r *http.Request
 		return vault.Entry{}, false
 	}
 
-	entry, ok := s.vault.BySubject(sub)
+	entry, ok, err := s.vault.Get(sub)
+	if err != nil {
+		httpx.WriteOAuthError(w, http.StatusInternalServerError, "server_error", "failed to read token vault")
+		return vault.Entry{}, false
+	}
 	if !ok {
 		httpx.WriteOAuthError(w, http.StatusUnauthorized, "invalid_token", "invalid broker token")
 		return vault.Entry{}, false
@@ -215,7 +223,11 @@ func (s *Server) vaultEntryForAPIToken(w http.ResponseWriter, r *http.Request) (
 }
 
 func (s *Server) vaultEntryForSubject(w http.ResponseWriter, r *http.Request, sub, missingMessage string) (vault.Entry, bool) {
-	entry, ok := s.vault.BySubject(sub)
+	entry, ok, err := s.vault.Get(sub)
+	if err != nil {
+		httpx.WriteOAuthError(w, http.StatusInternalServerError, "server_error", "failed to read token vault")
+		return vault.Entry{}, false
+	}
 	if !ok {
 		httpx.WriteOAuthError(w, http.StatusUnauthorized, "invalid_token", missingMessage)
 		return vault.Entry{}, false
@@ -247,15 +259,15 @@ func (s *Server) refreshVaultEntryToken(ctx context.Context, entry vault.Entry) 
 
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
-	form.Set("client_id", entry.ClientID)
-	form.Set("client_secret", entry.ClientSecret)
+	form.Set("client_id", s.config.ElvantoClientID)
+	form.Set("client_secret", s.config.ElvantoClientSecret)
 	form.Set("refresh_token", entry.RefreshToken)
 
 	token, err := s.elvanto.ExchangeToken(ctx, form)
 	if err != nil {
 		return nil, vault.Entry{}, err
 	}
-	refreshed, err := s.cacheTokenResponse(ctx, token, entry.ClientID, entry.ClientSecret, entry.RefreshToken)
+	refreshed, err := s.cacheTokenResponse(ctx, token, entry.RefreshToken)
 	return token, refreshed, err
 }
 

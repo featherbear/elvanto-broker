@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"net/url"
@@ -32,7 +33,7 @@ func NewFromEnv() (*Server, error) {
 }
 
 func New(config Config) (*Server, error) {
-	store, err := vault.New(config.TokenVaultDBPath)
+	store, err := vault.New(config.TokenVaultDBPath, config.TokenVaultEncryptionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -57,9 +58,9 @@ func New(config Config) (*Server, error) {
 		vault:  store,
 		tokens: tokenService,
 		idp: idp.New(idp.Config{
-			Issuer:          config.IDPIssuer,
+			Issuer:          config.IDPExpectedIssuer,
 			JWKSURL:         config.IDPJWKSURL,
-			Audience:        config.Audience,
+			Audience:        config.IDPExpectedAudience,
 			UserIDClaim:     config.IDPUserIDClaim,
 			AllowTokenInAPI: config.AllowIDPTokenInAPI,
 		}),
@@ -70,18 +71,47 @@ func New(config Config) (*Server, error) {
 
 func (s *Server) Run() error {
 	defer s.vault.Close()
-	log.Printf("Elvanto broker listening on %s", s.config.Addr)
+
+	log.Printf("Elvanto broker listening on %s", s.config.ServerListenAddress)
 	log.Printf("issuer: %s", s.config.Issuer)
-	return http.ListenAndServe(s.config.Addr, httpx.LogRequests(s.routes()))
+	mainErr := make(chan error, 1)
+	go func() {
+		mainErr <- http.ListenAndServe(s.config.ServerListenAddress, httpx.LogRequests(s.routes()))
+	}()
+	if s.config.TokenIssuerListenAddress == "" {
+		return <-mainErr
+	}
+
+	issueServer := &http.Server{
+		Addr:    s.config.TokenIssuerListenAddress,
+		Handler: httpx.LogRequests(s.tokenIssueRoutes()),
+	}
+	issueErr := make(chan error, 1)
+	go func() {
+		log.Printf("Elvanto broker token issue server listening on %s", s.config.TokenIssuerListenAddress)
+		issueErr <- issueServer.ListenAndServe()
+	}()
+
+	select {
+	case err := <-issueErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return <-mainErr
+		}
+		return err
+	case err := <-mainErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return <-issueErr
+		}
+		return err
+	}
 }
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", s.index)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.discovery)
 	mux.HandleFunc("GET /.well-known/openid-configuration", s.discovery)
 	mux.Handle("/oidc/", http.StripPrefix("/oidc", s.oidcRoutes()))
-	mux.HandleFunc("GET /token/issue", s.issueToken)
-	mux.HandleFunc("POST /token/issue", s.issueToken)
 	mux.HandleFunc("POST /token/exchange", s.exchangeToken)
 	mux.HandleFunc("OPTIONS /token/exchange", s.exchangeToken)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +119,26 @@ func (s *Server) routes() http.Handler {
 	})
 	mux.HandleFunc("/api", s.api)
 	mux.HandleFunc("/api/", s.api)
+	return mux
+}
+
+func (s *Server) index(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("Elvanto broker is running\n"))
+}
+
+func (s *Server) tokenIssueRoutes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /token/issue", s.issueToken)
+	mux.HandleFunc("POST /token/issue", s.issueToken)
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	})
 	return mux
 }
 

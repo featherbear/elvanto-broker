@@ -45,6 +45,10 @@ func (s *Server) auth(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid client_id or redirect_uri")
 		return
 	}
+	if q.Get("client_id") != s.config.BrokerOIDCClientID {
+		httpx.WriteOAuthError(w, http.StatusBadRequest, "unauthorized_client", "invalid client_id")
+		return
+	}
 	if _, err := url.ParseRequestURI(redirectURI); err != nil {
 		httpx.WriteOAuthError(w, http.StatusBadRequest, "invalid_request", "redirect_uri must be an absolute URL")
 		return
@@ -65,7 +69,7 @@ func (s *Server) auth(w http.ResponseWriter, r *http.Request) {
 	}
 	values := url.Values{}
 	values.Set("type", "web_server")
-	values.Set("client_id", q.Get("client_id"))
+	values.Set("client_id", s.config.ElvantoClientID)
 	values.Set("redirect_uri", redirectURI)
 
 	if len(scopes) > 0 {
@@ -95,12 +99,16 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 			r.Form.Set("client_secret", clientSecret)
 		}
 	}
+	if !s.validBrokerClient(r.Form.Get("client_id"), r.Form.Get("client_secret")) {
+		httpx.WriteOAuthError(w, http.StatusUnauthorized, "invalid_client", "invalid client credentials")
+		return
+	}
 	if r.Form.Get("grant_type") == "refresh_token" {
 		s.refreshBrokerToken(w, r)
 		return
 	}
 
-	form, err := elvantoTokenForm(r.Form)
+	form, err := s.elvantoTokenForm(r.Form)
 	if err != nil {
 		httpx.WriteOAuthError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -111,7 +119,7 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteOAuthError(w, http.StatusBadGateway, "server_error", err.Error())
 		return
 	}
-	entry, err := s.cacheTokenResponse(r.Context(), token, r.Form.Get("client_id"), r.Form.Get("client_secret"), r.Form.Get("refresh_token"))
+	entry, err := s.cacheTokenResponse(r.Context(), token, r.Form.Get("refresh_token"))
 	if err != nil {
 		httpx.WriteOAuthError(w, http.StatusBadGateway, "server_error", err.Error())
 		return
@@ -141,7 +149,11 @@ func (s *Server) refreshBrokerToken(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteOAuthError(w, http.StatusUnauthorized, "invalid_token", err.Error())
 		return
 	}
-	entry, ok := s.vault.BySubject(sub)
+	entry, ok, err := s.vault.Get(sub)
+	if err != nil {
+		httpx.WriteOAuthError(w, http.StatusInternalServerError, "server_error", "failed to read token vault")
+		return
+	}
 	if !ok {
 		httpx.WriteOAuthError(w, http.StatusUnauthorized, "invalid_token", "invalid broker refresh token")
 		return
@@ -166,13 +178,17 @@ func (s *Server) refreshBrokerToken(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, s.brokerTokenResponse(token, brokerToken, newBrokerRefreshToken))
 }
 
-func elvantoTokenForm(input url.Values) (url.Values, error) {
+func (s *Server) validBrokerClient(clientID, clientSecret string) bool {
+	return clientID == s.config.BrokerOIDCClientID && clientSecret == s.config.BrokerOIDCClientSecret
+}
+
+func (s *Server) elvantoTokenForm(input url.Values) (url.Values, error) {
 	grantType := input.Get("grant_type")
 	if grantType != "authorization_code" && grantType != "refresh_token" {
 		return nil, fmt.Errorf("only authorization_code and refresh_token are supported")
 	}
 
-	requiredFields := []string{"client_id", "client_secret"}
+	requiredFields := []string{}
 	if grantType == "authorization_code" {
 		requiredFields = append(requiredFields, "code", "redirect_uri")
 	} else {
@@ -186,8 +202,8 @@ func elvantoTokenForm(input url.Values) (url.Values, error) {
 
 	form := url.Values{}
 	form.Set("grant_type", grantType)
-	form.Set("client_id", input.Get("client_id"))
-	form.Set("client_secret", input.Get("client_secret"))
+	form.Set("client_id", s.config.ElvantoClientID)
+	form.Set("client_secret", s.config.ElvantoClientSecret)
 	if grantType == "authorization_code" {
 		form.Set("code", input.Get("code"))
 		form.Set("redirect_uri", input.Get("redirect_uri"))
@@ -197,7 +213,7 @@ func elvantoTokenForm(input url.Values) (url.Values, error) {
 	return form, nil
 }
 
-func (s *Server) cacheTokenResponse(ctx context.Context, token elvanto.TokenResponse, clientID, clientSecret, fallbackRefreshToken string) (vault.Entry, error) {
+func (s *Server) cacheTokenResponse(ctx context.Context, token elvanto.TokenResponse, fallbackRefreshToken string) (vault.Entry, error) {
 	accessToken := httpx.StringClaim(token, "access_token")
 	person, err := s.elvanto.FetchCurrentUser(ctx, accessToken)
 	if err != nil {
@@ -209,10 +225,8 @@ func (s *Server) cacheTokenResponse(ctx context.Context, token elvanto.TokenResp
 		AccessToken:  accessToken,
 		RefreshToken: httpx.FirstNonEmpty(httpx.StringClaim(token, "refresh_token"), fallbackRefreshToken),
 		ExpiresAt:    elvanto.ExpiresAt(token),
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
 	}
-	if err := s.vault.Put(entry); err != nil {
+	if err := s.vault.Set(entry); err != nil {
 		return vault.Entry{}, err
 	}
 	return entry, nil

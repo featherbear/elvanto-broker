@@ -9,14 +9,20 @@ import (
 
 // Config contains all environment-backed settings required to run the broker.
 type Config struct {
-	// Addr is the TCP address the HTTP server listens on.
-	Addr string `env:"ADDR" envDefault:":8080"`
+	// ServerListenAddress is the TCP address the public HTTP server listens on.
+	ServerListenAddress string `env:"SERVER_LISTEN_ADDRESS" envDefault:":8080"`
+
+	// TokenIssuerListenAddress is the optional TCP address the internal token issue server listens on.
+	TokenIssuerListenAddress string `env:"TOKEN_ISSUER_LISTEN_ADDRESS"`
 
 	// Issuer is the public issuer URL advertised by the broker OAuth facade.
 	Issuer string `env:"ISSUER" envDefault:"http://localhost:8080"`
 
-	// TokenVaultDBPath is the bbolt database path used for cached Elvanto tokens.
+	// TokenVaultDBPath is a bbolt file path or sql:// Postgres DSN for cached Elvanto tokens.
 	TokenVaultDBPath string `env:"TOKEN_VAULT_DB_PATH" envDefault:"elvanto-broker.db"`
+
+	// TokenVaultEncryptionKey is a base64-encoded 32-byte AES-GCM key for vault secrets.
+	TokenVaultEncryptionKey string `env:"TOKEN_VAULT_ENCRYPTION_KEY,required"`
 
 	// ElvantoAuthURL is the upstream Elvanto OAuth authorization endpoint.
 	ElvantoAuthURL string `env:"ELVANTO_AUTH_URL" envDefault:"https://api.elvanto.com/oauth"`
@@ -30,6 +36,18 @@ type Config struct {
 	// ElvantoUserinfoURL is the Elvanto endpoint used to resolve the current user.
 	ElvantoUserinfoURL string `env:"ELVANTO_USERINFO_URL" envDefault:"https://api.elvanto.com/v1/people/currentUser.json"`
 
+	// ElvantoClientID is the global Elvanto OAuth client ID used by the broker.
+	ElvantoClientID string `env:"ELVANTO_CLIENT_ID,required"`
+
+	// ElvantoClientSecret is the global Elvanto OAuth client secret used by the broker.
+	ElvantoClientSecret string `env:"ELVANTO_CLIENT_SECRET,required"`
+
+	// BrokerOIDCClientID is the client ID callers use when talking to the broker OIDC facade.
+	BrokerOIDCClientID string `env:"BROKER_OIDC_CLIENT_ID,required"`
+
+	// BrokerOIDCClientSecret is the client secret callers use when talking to the broker OIDC facade.
+	BrokerOIDCClientSecret string `env:"BROKER_OIDC_CLIENT_SECRET,required"`
+
 	// BrokerTokenSigningSecret signs broker-issued JWT access and refresh tokens.
 	BrokerTokenSigningSecret string `env:"BROKER_TOKEN_SIGNING_SECRET"`
 
@@ -39,14 +57,14 @@ type Config struct {
 	// BrokerRefreshTokenTTL is the lifetime for broker-issued refresh tokens.
 	BrokerRefreshTokenTTL time.Duration `env:"BROKER_REFRESH_TOKEN_TTL" envDefault:"336h"`
 
-	// IDPIssuer is the expected issuer claim for trusted IdP tokens.
-	IDPIssuer string `env:"IDP_ISSUER"`
+	// IDPExpectedIssuer is the expected issuer claim for trusted IdP tokens.
+	IDPExpectedIssuer string `env:"IDP_EXPECTED_ISSUER"`
 
 	// IDPJWKSURL is the JWKS endpoint for validating RS256 trusted IdP tokens.
 	IDPJWKSURL string `env:"IDP_JWKS_URL"`
 
-	// Audience is the expected audience claim for trusted IdP tokens.
-	Audience string `env:"AUDIENCE"`
+	// IDPExpectedAudience is the expected audience claim for trusted IdP tokens.
+	IDPExpectedAudience string `env:"IDP_EXPECTED_AUDIENCE"`
 
 	// UserIDClaim is the trusted IdP claim containing the Elvanto person ID.
 	IDPUserIDClaim string `env:"IDP_USER_ID_CLAIM" envDefault:"sub"`
