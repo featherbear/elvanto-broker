@@ -32,8 +32,7 @@ TOKEN_VAULT_DB_PATH=/data/elvanto-broker.db
 TOKEN_VAULT_ENCRYPTION_KEY=base64-encoded-32-byte-key
 ELVANTO_CLIENT_ID=94483
 ELVANTO_CLIENT_SECRET=change-me
-BROKER_OIDC_CLIENT_ID=elvanto-broker
-BROKER_OIDC_CLIENT_SECRET=change-me
+BROKER_OIDC_ALLOWED_CLIENTS=elvanto-broker:change-me,another-client:another-secret
 BROKER_TOKEN_SIGNING_SECRET=change-me
 BROKER_ACCESS_TOKEN_TTL=1h
 BROKER_REFRESH_TOKEN_TTL=336h
@@ -47,7 +46,7 @@ ALLOW_IDP_TOKEN_IN_API=false
 
 `IDP_EXPECTED_AUDIENCE` is the expected JWT `aud` claim. It identifies who the IdP token was issued for. In this local stack, Authentik issues tokens for the `authentik-sample-app` OAuth client, so the broker requires `IDP_EXPECTED_AUDIENCE=authentik-sample-app`. This prevents a valid token minted for another app from being exchanged at the broker.
 
-`BROKER_OIDC_CLIENT_ID` and `BROKER_OIDC_CLIENT_SECRET` identify clients calling the broker OIDC facade. `/oidc/auth` validates the provided broker client ID, and `/oidc/token` validates the provided broker client credentials.
+`BROKER_OIDC_ALLOWED_CLIENTS` identifies clients calling the broker OIDC facade as comma-separated `client_id:client_secret` pairs. `/oidc/auth` validates that the provided broker client ID is allowlisted, and `/oidc/token` validates that client's broker credentials.
 
 `ELVANTO_CLIENT_ID` and `ELVANTO_CLIENT_SECRET` are the single global Elvanto OAuth client used upstream by the broker. They are not accepted from callers and are not stored in the vault.
 

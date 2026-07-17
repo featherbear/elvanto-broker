@@ -108,17 +108,21 @@ func (s *Server) Run() error {
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("GET /", s.index)
-	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.discovery)
-	mux.HandleFunc("GET /.well-known/openid-configuration", s.discovery)
-	mux.Handle("/oidc/", http.StripPrefix("/oidc", s.oidcRoutes()))
-	mux.HandleFunc("POST /token/exchange", s.exchangeToken)
-	mux.HandleFunc("OPTIONS /token/exchange", s.exchangeToken)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+
+	mux.HandleFunc("GET /.well-known/openid-configuration", s.discovery)
+	mux.Handle("/oidc/", http.StripPrefix("/oidc", s.oidcRoutes()))
+
+	mux.HandleFunc("POST /token/exchange", s.exchangeToken)
+	mux.HandleFunc("OPTIONS /token/exchange", s.exchangeToken)
+
 	mux.HandleFunc("/api", s.api)
 	mux.HandleFunc("/api/", s.api)
+
 	return mux
 }
 
@@ -134,11 +138,12 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) tokenIssueRoutes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /token/issue", s.issueToken)
-	mux.HandleFunc("POST /token/issue", s.issueToken)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+
+	mux.HandleFunc("GET /token/issue", s.issueToken)
+	mux.HandleFunc("POST /token/issue", s.issueToken)
 	return mux
 }
 

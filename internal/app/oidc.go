@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -45,7 +46,7 @@ func (s *Server) auth(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteOAuthError(w, http.StatusBadRequest, "invalid_request", "invalid client_id or redirect_uri")
 		return
 	}
-	if q.Get("client_id") != s.config.BrokerOIDCClientID {
+	if _, ok := s.config.BrokerOIDCAllowedClients[q.Get("client_id")]; !ok {
 		httpx.WriteOAuthError(w, http.StatusBadRequest, "unauthorized_client", "invalid client_id")
 		return
 	}
@@ -179,7 +180,8 @@ func (s *Server) refreshBrokerToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) validBrokerClient(clientID, clientSecret string) bool {
-	return clientID == s.config.BrokerOIDCClientID && clientSecret == s.config.BrokerOIDCClientSecret
+	allowedSecret, ok := s.config.BrokerOIDCAllowedClients[clientID]
+	return ok && subtle.ConstantTimeCompare([]byte(clientSecret), []byte(allowedSecret)) == 1
 }
 
 func (s *Server) elvantoTokenForm(input url.Values) (url.Values, error) {

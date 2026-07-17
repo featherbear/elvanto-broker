@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -42,11 +43,11 @@ type Config struct {
 	// ElvantoClientSecret is the global Elvanto OAuth client secret used by the broker.
 	ElvantoClientSecret string `env:"ELVANTO_CLIENT_SECRET,required"`
 
-	// BrokerOIDCClientID is the client ID callers use when talking to the broker OIDC facade.
-	BrokerOIDCClientID string `env:"BROKER_OIDC_CLIENT_ID,required"`
+	// BrokerOIDCAllowedClientsRaw is the comma-separated client_id:client_secret allowlist for the broker OIDC facade.
+	BrokerOIDCAllowedClientsRaw string `env:"BROKER_OIDC_ALLOWED_CLIENTS,required"`
 
-	// BrokerOIDCClientSecret is the client secret callers use when talking to the broker OIDC facade.
-	BrokerOIDCClientSecret string `env:"BROKER_OIDC_CLIENT_SECRET,required"`
+	// BrokerOIDCAllowedClients maps broker OIDC client IDs to their allowed client secrets.
+	BrokerOIDCAllowedClients map[string]string `env:"-"`
 
 	// BrokerTokenSigningSecret signs broker-issued JWT access and refresh tokens.
 	BrokerTokenSigningSecret string `env:"BROKER_TOKEN_SIGNING_SECRET"`
@@ -85,5 +86,28 @@ func LoadConfig() (Config, error) {
 		return Config{}, err
 	}
 	config.Issuer = strings.TrimRight(config.Issuer, "/")
+	allowedClients, err := parseBrokerOIDCAllowedClients(config.BrokerOIDCAllowedClientsRaw)
+	if err != nil {
+		return Config{}, err
+	}
+	config.BrokerOIDCAllowedClients = allowedClients
 	return config, nil
+}
+
+func parseBrokerOIDCAllowedClients(value string) (map[string]string, error) {
+	clients := map[string]string{}
+	for _, entry := range strings.Split(value, ",") {
+		entry = strings.TrimSpace(entry)
+		clientID, clientSecret, ok := strings.Cut(entry, ":")
+		clientID = strings.TrimSpace(clientID)
+		clientSecret = strings.TrimSpace(clientSecret)
+		if !ok || clientID == "" || clientSecret == "" {
+			return nil, fmt.Errorf("BROKER_OIDC_ALLOWED_CLIENTS must be comma-separated client_id:client_secret pairs")
+		}
+		if _, exists := clients[clientID]; exists {
+			return nil, fmt.Errorf("BROKER_OIDC_ALLOWED_CLIENTS contains duplicate client_id %q", clientID)
+		}
+		clients[clientID] = clientSecret
+	}
+	return clients, nil
 }
