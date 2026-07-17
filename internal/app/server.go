@@ -129,7 +129,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("Elvanto broker is running\n"))
+	_, _ = w.Write([]byte("The Elvanto broker is running\n"))
 }
 
 func (s *Server) tokenIssueRoutes() http.Handler {
