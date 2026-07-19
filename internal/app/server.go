@@ -72,8 +72,7 @@ func New(config Config) (*Server, error) {
 func (s *Server) Run() error {
 	defer s.vault.Close()
 
-	log.Printf("Elvanto broker listening on %s", s.config.ServerListenAddress)
-	log.Printf("issuer: %s", s.config.Issuer)
+	s.logStartup()
 	mainErr := make(chan error, 1)
 	go func() {
 		mainErr <- http.ListenAndServe(s.config.ServerListenAddress, httpx.LogRequests(s.routes()))
@@ -138,6 +137,45 @@ func (s *Server) tokenIssueRoutes() http.Handler {
 		httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	return mux
+}
+
+func (s *Server) logStartup() {
+	log.Printf("Elvanto broker starting")
+	log.Printf("public listener: %s", s.config.ServerListenAddress)
+	log.Printf("issuer: %s", s.config.Issuer)
+	log.Printf("upstream Elvanto API: %s", s.config.ElvantoAPIURL)
+	log.Printf("token vault backend: %s", tokenVaultBackend(s.config.TokenVaultDBPath))
+	log.Printf("broker OIDC clients configured: %d", len(s.config.BrokerOIDCAllowedClients))
+	log.Printf("broker access token TTL: %s", s.config.BrokerAccessTokenTTL)
+	log.Printf("broker refresh token TTL: %s", s.config.BrokerRefreshTokenTTL)
+	log.Printf("broker token signing secret configured: %t", s.config.BrokerTokenSigningSecret != "")
+
+	if s.idp.Configured() {
+		log.Printf("IdP token validation: enabled issuer=%s audience_configured=%t user_id_claim=%s", s.config.IDPExpectedIssuer, s.config.IDPExpectedAudience != "", s.config.IDPUserIDClaim)
+	} else {
+		log.Printf("IdP token validation: disabled")
+	}
+	log.Printf("IdP tokens accepted by /api/*: %t", s.config.AllowIDPTokenInAPI)
+
+	if len(s.config.CORSAllowedOrigins) == 0 {
+		log.Printf("CORS allowed origins: all")
+	} else {
+		log.Printf("CORS allowed origins: %s", strings.Join(s.config.CORSAllowedOrigins, ","))
+	}
+
+	if s.config.TokenIssuerListenAddress == "" {
+		log.Printf("internal token issue endpoint: disabled")
+	} else {
+		log.Printf("internal token issue listener: %s", s.config.TokenIssuerListenAddress)
+		log.Printf("internal token issue subject header configured: %t", s.config.ElvantoSubHeader != "")
+	}
+}
+
+func tokenVaultBackend(path string) string {
+	if strings.HasPrefix(path, "sql://") || strings.HasPrefix(path, "postgres://") || strings.HasPrefix(path, "postgresql://") {
+		return "postgres"
+	}
+	return "bbolt"
 }
 
 func (s *Server) apiTargetURL(requestURL *url.URL) (string, error) {
